@@ -1,4 +1,3 @@
-# WORK IN PROGRESS
 # Black Magic Probe for RP2040
 # WORK IN PROGRESS
 
