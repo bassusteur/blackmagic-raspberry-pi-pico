@@ -1,8 +1,7 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Copyright (C) 2022 1BitSquared <info@1bitsquared.com>
- * Written by Rachel Mant <git@dragonmux.network>
+ * Written by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,13 +31,10 @@ static void cdc_task(void)
       tud_cdc_write_char(WRITEBUF);
   }
 
-  if(tud_cdc_connected())
+  while (tud_cdc_connected() && tud_cdc_available())
   {
-    uint32_t count = tud_cdc_read(READBUF, sizeof(READBUF));
-    for(int i=0; i<count; i++)
-    {
-      queue_add_blocking(&rqueue, &READBUF[i]);
-    }
+    tud_cdc_read(&READBUF, 1);
+    queue_add_blocking(&rqueue, &READBUF);
   }
 
   if(tud_cdc_connected())
@@ -48,9 +44,6 @@ static void cdc_task(void)
 void multicore_loop()
 {
     //tusb_init();
-    board_init();
-    tud_init(BOARD_TUD_RHPORT);
-
     while(1)
     {
       tud_task();
@@ -60,8 +53,14 @@ void multicore_loop()
 
 void multicore_init()
 {
-  queue_init(&wqueue, sizeof(char), 1);
-  queue_init(&rqueue, sizeof(char), 1);
+  board_init();
+  //tud_init(BOARD_TUD_RHPORT);
+  tusb_init();
 
+  queue_init(&wqueue, sizeof(char), 64);
+  queue_init(&rqueue, sizeof(char), 64);
+
+  multicore_reset_core1();
+	multicore_fifo_drain();
   multicore_launch_core1(multicore_loop);
 }
