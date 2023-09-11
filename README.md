@@ -11,8 +11,7 @@ Attempt to port firmware for the Black Magic probe to RP2040.
 - test target debugging
 
 # How to compile
-1. ```make```
-2. ```make PROBE_HOST=rp2040```
+```make PROBE_HOST=rp2040```
 
 ## Resources
 * [Official github](https://github.com/blackmagic-debug/blackmagic)
