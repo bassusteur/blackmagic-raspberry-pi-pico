@@ -1,9 +1,7 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Copyright (C) 2015 Gareth McMullin <gareth@blacksphere.co.nz>
- * Copyright (C) 2023 1BitSquared <info@1bitsquared.com>
- * Modified by Rachel Mant <git@dragonmux.network>
+ * Written by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,9 +40,6 @@ static volatile bool alarm_fired;
 static void alarm_irq(void) {
     // Clear the alarm irq
     hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
-
-    // Assume alarm 0 has fired
-    printf("Alarm IRQ fired\n");
     alarm_fired = true;
 }
 

@@ -1,8 +1,7 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Copyright (C) 2022 1BitSquared <info@1bitsquared.com>
- * Written by Rachel Mant <git@dragonmux.network>
+ * Written by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,8 +24,8 @@
 #include "general.h"
 #include "pico/util/queue.h"
 
-#define QUEUE_LENGTH 128
-#define BUF_LENGTH 1
+char READBUF[1024U];
+char WRITEBUF;
 
 queue_t wqueue;
 queue_t rqueue;

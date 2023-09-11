@@ -5,6 +5,7 @@
  * Written by Gareth McMullin <gareth@blacksphere.co.nz>
  * Copyright (C) 2022-2023 1BitSquared <info@1bitsquared.com>
  * Modified by Rachel Mant <git@dragonmux.network>
+ * Modified by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

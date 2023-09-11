@@ -1,8 +1,7 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Copyright (C) 2022 1BitSquared <info@1bitsquared.com>
- * Written by Rachel Mant <git@dragonmux.network>
+ * Written by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +23,6 @@
 
 void blackmagic_usb_init()
 {
-  board_init();
-  tud_init(BOARD_TUD_RHPORT);
   multicore_init();
 }
 

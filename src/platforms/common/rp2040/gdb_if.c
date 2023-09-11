@@ -1,8 +1,7 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Copyright (C) 2011  Black Sphere Technologies Ltd.
- * Written by Gareth McMullin <gareth@blacksphere.co.nz>
+ * Written by Treble <bassusteur@protonmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,31 +22,24 @@
 #include "gdb_if.h"
 #include "usb_serial.h"
 
-static uint32_t count_out;
-static uint32_t count_in;
-static uint32_t out_ptr;
-static char buffer_out[CDCACM_PACKET_SIZE];  // DEFINE CDCACM_PACKET_SIZE LATER IN TINY USB CONFIG
-static char buffer_in[CDCACM_PACKET_SIZE];
-
+extern queue_t wqueue;
+extern queue_t rqueue;
 
 void gdb_if_putchar(const char c, const int flush)
 {
-    /*
-    buffer_in[count_in++] = c;
-    if (flush || count_in == CDCACM_PACKET_SIZE)
-    {
-        while()
-            continue;
-    }
-    */
+    queue_add_blocking(&wqueue, &c);
 }
 
 char gdb_if_getchar(void)
 {
-    return "B";
+    char c;
+    queue_remove_blocking(&rqueue, &c);
+    return c;
 }
 
 char gdb_if_getchar_to(uint32_t timeout)
 {
-    return "B";
+    char c;
+    queue_remove_blocking(&rqueue, &c);
+    return c;
 }
