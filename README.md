@@ -8,6 +8,7 @@ Attempt to port firmware for the Black Magic probe to RP2040.
 - working gdb server
 
 # TO-DO
+- fix timing entirely
 - test target debugging
 
 # How to compile
