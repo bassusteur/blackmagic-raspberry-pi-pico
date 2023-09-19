@@ -32,29 +32,22 @@ uint32_t target_clk_divider = 0;
 
 static size_t morse_tick = 0;
 
-static volatile bool alarm_fired;
+struct repeating_timer timer;
 
 #define ALARM_NUM 0
 #define ALARM_IRQ TIMER_IRQ_0
 
-static void alarm_irq(void) {
-    // Clear the alarm irq
-    hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
-    alarm_fired = true;
+
+bool sys_tick_handler(void *user_data)
+{
+    uint32_t lo = timer_hw->timelr;
+    uint32_t hi = timer_hw->timehr;
+    time_ms = lo / 1000U;
 }
 
 void platform_timing_init(void)
 {
-    // enable interrupt for the alarm
-    hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);
-    // set irq handler for the alarm irq
-    irq_set_exclusive_handler(ALARM_IRQ, alarm_irq);
-    // enable the alarm irq
-    irq_set_enabled(ALARM_IRQ, true);
-    // prepare data to to write to the alarm register
-    uint64_t target = timer_hw->timerawl + SYSTICKHZ;
-    // arm the alarm writing target to the register
-    timer_hw->alarm[ALARM_NUM] = (uint32_t) target;
+    add_repeating_timer_ms(SYSTICKMS, sys_tick_handler, NULL, &timer);
 }
 
 void platform_delay(uint32_t ms)
@@ -67,7 +60,7 @@ void platform_delay(uint32_t ms)
 
 uint32_t platform_time_ms(void)
 {
-	return time_ms;
+    return time_ms;
 }
 
 uint32_t platform_max_frequency_get(void)
@@ -75,12 +68,5 @@ uint32_t platform_max_frequency_get(void)
     return 125000000U;
 }
 
-void platform_max_frequency_set(const uint32_t frequency)
-{
-    clock_configure(clk_sys,
-                    CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
-                    CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-                    frequency/1000000 * MHZ,
-                    frequency/1000000 * MHZ);
-}
+void platform_max_frequency_set(const uint32_t frequency){}
 
