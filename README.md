@@ -1,4 +1,4 @@
-# Black Magic Probe for RP2040
+# Black Magic Probe for RP2040 / PI PICO boards
 ## WORK IN PROGRESS
 
 Attempt to port firmware for the Black Magic probe to RP2040.
