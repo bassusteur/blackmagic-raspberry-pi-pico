@@ -91,6 +91,19 @@ typedef struct cortexa_priv {
 #define CORTEXAR_DBG_WCR   0x1c0U
 #define CORTEXAR_CTR       0xd04U
 
+#define CORTEXAR_DBG_DSCCR 0x028U
+#define CORTEXAR_DBG_DSMCR 0x02cU
+#define CORTEXAR_DBG_OSLAR 0x300U
+#define CORTEXAR_DBG_OSLSR 0x304U
+#define CORTEXAR_DBG_LAR   0xfb0U /* Lock Access */
+#define CORTEXAR_DBG_LSR   0xfb4U /* Lock Status */
+
+#define CORTEXAR_DBG_OSLSR_OSLM0 (1U << 0U)
+#define CORTEXAR_DBG_OSLSR_OSLK  (1U << 1U)
+#define CORTEXAR_DBG_OSLSR_NTT   (1U << 2U)
+#define CORTEXAR_DBG_OSLSR_OSLM1 (1U << 3U)
+#define CORTEXAR_DBG_OSLSR_OSLM  (CORTEXAR_DBG_OSLSR_OSLM0 | CORTEXAR_DBG_OSLSR_OSLM1)
+
 #define CORTEXAR_DBG_IDR_BREAKPOINT_MASK  0xfU
 #define CORTEXAR_DBG_IDR_BREAKPOINT_SHIFT 24U
 #define CORTEXAR_DBG_IDR_WATCHPOINT_MASK  0xfU
@@ -317,6 +330,61 @@ static size_t create_tdesc_cortex_a(char *buffer, size_t max_len)
 	return (size_t)total;
 }
 
+#ifdef ENABLE_DEBUG
+typedef struct bitfield_entry {
+	char *desc;
+	uint8_t bitnum;
+} bitfields_lut_s;
+
+static const bitfields_lut_s cortexa_dbg_dscr_lut[] = {
+	{"HALTED", 0U},
+	{"RESTARTED", 1U},
+	{"SDABORT_l", 6U},
+	{"ADABORT_l", 7U},
+	{"UND_l", 8U},
+	{"FS", 9U},
+	{"ITRen", 13U},
+	{"HDBGen", 14U},
+	{"MDBGen", 15U},
+	{"InstrCompl_l", 24U},
+	{"PipeAdv", 25U},
+	{"TXfull_l", 26U},
+	{"RXfull_l", 27U},
+	{"TXfull", 29U},
+	{"RXfull", 30U},
+};
+
+static void helper_print_bitfields(const uint32_t val, const bitfields_lut_s *lut, const size_t array_length)
+{
+	for (size_t i = 0; i < array_length; i++) {
+		if (val & (1U << lut[i].bitnum))
+			DEBUG_TARGET("%s ", lut[i].desc);
+	}
+}
+
+static void cortexa_decode_bitfields(const uint32_t reg, const uint32_t val)
+{
+	DEBUG_TARGET("Bits set in reg ");
+	switch (reg) {
+	case CORTEXAR_DBG_DSCR:
+		DEBUG_TARGET("DBGDSCR: ");
+		helper_print_bitfields(val, cortexa_dbg_dscr_lut, ARRAY_LENGTH(cortexa_dbg_dscr_lut));
+		break;
+	default:
+		DEBUG_TARGET("unknown reg");
+		break;
+	}
+
+	DEBUG_TARGET("\n");
+}
+#else
+static void cortexa_decode_bitfields(const uint32_t reg, const uint32_t val)
+{
+	(void)reg;
+	(void)val;
+}
+#endif
+
 static void cortexar_run_insn(target_s *const target, const uint32_t insn)
 {
 	/* Issue the requested instruction to the core */
@@ -508,6 +576,46 @@ bool cortexa_probe(adiv5_access_port_s *ap, target_addr_t base_address)
 	target->halt_poll = cortexa_halt_poll;
 	target->halt_resume = cortexa_halt_resume;
 
+#if 0
+	/* Reset 0xc5acce55 lock access to deter software */
+	cortex_dbg_write32(target, CORTEXAR_DBG_LAR, 0U);
+	/* Cache write-through */
+	cortex_dbg_write32(target, CORTEXAR_DBG_DSCCR, 0U);
+	/* Disable TLB lookup and refill/eviction */
+	cortex_dbg_write32(target, CORTEXAR_DBG_DSMCR, 0U);
+#endif
+
+	uint32_t dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
+	DEBUG_INFO("%s: DBGOSLSR = 0x%08" PRIx32 "\n", __func__, dbg_osreg);
+	/* Is OS Lock implemented? */
+	if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM0 ||
+		(dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM1) {
+		/* Is OS Lock set? */
+		if (dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) {
+			DEBUG_WARN("%s: OSLock set! Trying to unlock\n", __func__);
+			cortex_dbg_write32(target, CORTEXAR_DBG_OSLAR, 0U);
+			dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
+
+			if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) != 0) {
+				DEBUG_ERROR("%s: OSLock sticky, core not powered?\n", __func__);
+			}
+		}
+	}
+
+	uint32_t dbgdscr = cortex_dbg_read32(target, CORTEXAR_DBG_DSCR);
+	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 " (1)\n", __func__, dbgdscr);
+	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
+
+	/* Enable halting debug mode */
+	dbgdscr |= CORTEXAR_DBG_DSCR_HALT_DBG_ENABLE | CORTEXAR_DBG_DSCR_ITR_ENABLE;
+	cortex_dbg_write32(target, CORTEXAR_DBG_DSCR, dbgdscr);
+	dbgdscr &= ~DBGDSCR_EXTDCCMODE_MASK;
+	cortex_dbg_write32(target, CORTEXAR_DBG_DSCR, dbgdscr);
+
+	dbgdscr = cortex_dbg_read32(target, CORTEXAR_DBG_DSCR);
+	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 " (2)\n", __func__, dbgdscr);
+	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
+
 	/* Try to halt the target core */
 	target_halt_request(target);
 	platform_timeout_s timeout;
@@ -568,13 +676,6 @@ bool cortexa_attach(target_s *target)
 
 	/* Clear any pending fault condition */
 	target_check_error(target);
-
-	/* Enable halting debug mode */
-	uint32_t dbgdscr = cortex_dbg_read32(target, CORTEXAR_DBG_DSCR);
-	dbgdscr |= CORTEXAR_DBG_DSCR_ITR_ENABLE | CORTEXAR_DBG_DSCR_ITR_ENABLE;
-	dbgdscr &= ~DBGDSCR_EXTDCCMODE_MASK;
-	cortex_dbg_write32(target, CORTEXAR_DBG_DSCR, dbgdscr);
-	DEBUG_INFO("DBGDSCR = 0x%08" PRIx32 "\n", dbgdscr);
 
 	target_halt_request(target);
 	size_t tries = 10;
