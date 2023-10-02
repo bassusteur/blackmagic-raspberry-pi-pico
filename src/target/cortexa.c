@@ -548,6 +548,25 @@ const char *cortexa_regs_description(target_s *t)
 	return description;
 }
 
+static void cortexa_oslock_unlock(target_s *target)
+{
+	uint32_t dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
+	DEBUG_INFO("%s: DBGOSLSR = 0x%08" PRIx32 "\n", __func__, dbg_osreg);
+	/* Is OS Lock implemented? */
+	if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM0 ||
+		(dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM1) {
+		/* Is OS Lock set? */
+		if (dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) {
+			DEBUG_WARN("%s: OSLock set! Trying to unlock\n", __func__);
+			cortex_dbg_write32(target, CORTEXAR_DBG_OSLAR, 0U);
+			dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
+
+			if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) != 0)
+				DEBUG_ERROR("%s: OSLock sticky, core not powered?\n", __func__);
+		}
+	}
+}
+
 bool cortexa_probe(adiv5_access_port_s *ap, target_addr_t base_address)
 {
 	target_s *const target = target_new();
@@ -585,36 +604,11 @@ bool cortexa_probe(adiv5_access_port_s *ap, target_addr_t base_address)
 	cortex_dbg_write32(target, CORTEXAR_DBG_DSMCR, 0U);
 #endif
 
-	uint32_t dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
-	DEBUG_INFO("%s: DBGOSLSR = 0x%08" PRIx32 "\n", __func__, dbg_osreg);
-	/* Is OS Lock implemented? */
-	if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM0 ||
-		(dbg_osreg & CORTEXAR_DBG_OSLSR_OSLM) == CORTEXAR_DBG_OSLSR_OSLM1) {
-		/* Is OS Lock set? */
-		if (dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) {
-			DEBUG_WARN("%s: OSLock set! Trying to unlock\n", __func__);
-			cortex_dbg_write32(target, CORTEXAR_DBG_OSLAR, 0U);
-			dbg_osreg = cortex_dbg_read32(target, CORTEXAR_DBG_OSLSR);
-
-			if ((dbg_osreg & CORTEXAR_DBG_OSLSR_OSLK) != 0) {
-				DEBUG_ERROR("%s: OSLock sticky, core not powered?\n", __func__);
-			}
-		}
-	}
-
-	uint32_t dbgdscr = cortex_dbg_read32(target, CORTEXAR_DBG_DSCR);
-	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 " (1)\n", __func__, dbgdscr);
-	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
-
-	/* Enable halting debug mode */
-	dbgdscr |= CORTEXAR_DBG_DSCR_HALT_DBG_ENABLE | CORTEXAR_DBG_DSCR_ITR_ENABLE;
-	cortex_dbg_write32(target, CORTEXAR_DBG_DSCR, dbgdscr);
-	dbgdscr &= ~DBGDSCR_EXTDCCMODE_MASK;
-	cortex_dbg_write32(target, CORTEXAR_DBG_DSCR, dbgdscr);
-
-	dbgdscr = cortex_dbg_read32(target, CORTEXAR_DBG_DSCR);
-	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 " (2)\n", __func__, dbgdscr);
-	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
+	/*
+	 * Clear the OSLock if set prior to halting the core - trying to do this after target_halt_request()
+	 * does not function over JTAG and triggers the lock sticky message.
+	 */
+	cortexa_oslock_unlock(target);
 
 	/* Try to halt the target core */
 	target_halt_request(target);
@@ -677,6 +671,8 @@ bool cortexa_attach(target_s *target)
 	/* Clear any pending fault condition */
 	target_check_error(target);
 
+	/* Make sure the OSLock is cleared prior to halting the core in case it got re-set between probe and attach. */
+	cortexa_oslock_unlock(target);
 	target_halt_request(target);
 	size_t tries = 10;
 	while (!platform_nrst_get_val() && !target_halt_poll(target, NULL) && --tries)
@@ -894,10 +890,19 @@ static target_halt_reason_e cortexa_halt_poll(target_s *t, target_addr_t *watch)
 	if (!(dbgdscr & CORTEXAR_DBG_DSCR_HALTED)) /* Not halted */
 		return TARGET_HALT_RUNNING;
 
+	cortexa_oslock_unlock(t);
+
 	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 "\n", __func__, dbgdscr);
-	/* Reenable DBGITR */
-	dbgdscr |= CORTEXAR_DBG_DSCR_ITR_ENABLE;
+	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
+
+	/* Enable halting debug mode */
+	dbgdscr |= CORTEXAR_DBG_DSCR_HALT_DBG_ENABLE | CORTEXAR_DBG_DSCR_ITR_ENABLE;
+	dbgdscr &= ~DBGDSCR_EXTDCCMODE_MASK;
 	cortex_dbg_write32(t, CORTEXAR_DBG_DSCR, dbgdscr);
+
+	dbgdscr = cortex_dbg_read32(t, CORTEXAR_DBG_DSCR);
+	DEBUG_INFO("%s: DBGDSCR = 0x%08" PRIx32 "\n", __func__, dbgdscr);
+	cortexa_decode_bitfields(CORTEXAR_DBG_DSCR, dbgdscr);
 
 	/* Find out why we halted */
 	target_halt_reason_e reason = TARGET_HALT_BREAKPOINT;
@@ -958,7 +963,7 @@ void cortexa_halt_resume(target_s *t, bool step)
 	if (step)
 		dbgdscr |= DBGDSCR_INTDIS;
 	else
-		dbgdscr &= ~DBGDSCR_INTDIS;
+		dbgdscr &= ~(DBGDSCR_INTDIS | CORTEXAR_DBG_DSCR_HALT_DBG_ENABLE);
 	dbgdscr &= ~CORTEXAR_DBG_DSCR_ITR_ENABLE;
 	cortex_dbg_write32(t, CORTEXAR_DBG_DSCR, dbgdscr);
 
